@@ -25,3 +25,10 @@ Desktop.ini
 .env
 .env.local
 .env.*.local
+
+# SolidWorks: temporales y resultados de simulacion
+~$*
+*.CWR
+
+# Logs del monitor serie de PlatformIO
+logs/

@@ -1,0 +1,238 @@
+﻿SEP-r22 | COMANDOS Y FALLOS
+- Monitor USB: 115200 baudios.
+- Enviar con Enter.
+- Usar punto decimal.
+- Los nombres de funciones indican dónde buscar en el código.
+
+======================================================================
+1. COMANDOS
+======================================================================
+
+PARADA GENERAL
+  01. S / X
+      - Función: Cancela el movimiento de los tres motores y
+        apaga el contactor. No hay reanudación automática.
+      - Código: src/comandos.cpp → Commands::poll()
+      - Código: src/main.cpp → loop() → stopAll()
+      - La ESP para al recibir el carácter. Si el
+        monitor usa send_on_enter, pulsa Enter.
+
+MOTOR 3
+  02. H3
+      - Función: Busca HOME hacia -1 a PWM fijo (40 % inicial).
+        Cuando el final se confirma, pone x_local en 0.
+  03. E3
+      - Función: Busca END hacia +1 a PWM fijo (50 % inicial).
+        Se detiene en el final y conserva el encoder.
+            - Código de H3 y E3: src/motor3.cpp → seekLimit(), update().
+  04. M3,10,1 / M3,10,-1
+      - Función: Mueve 10 mm desde la posición actual con PID,
+        en sentido positivo o negativo. H3 es opcional.
+      - Código: src/motor3.cpp → move(), update().
+  - H3 y E3 cortan al detectar el final. Lo confirman con el motor parado
+    durante 30 ms continuos. Si el final ya estaba activo, no se mueve.
+  - Se permite salir del final opuesto.
+  - El PWM fijo no regula velocidad.
+  - H3, E3 y M3 requieren que M1/M2 no estén moviéndose o estabilizándose.
+
+MORDAZAS M1/M2
+  05. H / L
+      - Función: Abre y referencia M1/M2. También cancela una
+        operación de M3 que esté en curso.
+      - Código: src/main.cpp → startHome().
+  06. D,200
+      - Función: Pide 200 mm de separación sobre el centro fijo.
+        Cada mordaza que cierra usa PWM fijo de 25 % (contactPwm).
+        Se detiene al detectar CONTACTO o END, o al llegar a su objetivo.
+      - Código: src/main.cpp → startSeparation(), coordinate().
+  07. C
+      - Función: Centra la pieza usando el centro estimado.
+  08. T,+5 / T,-5
+      - Función: Traslada 5 mm a derecha / izquierda, respectivamente.
+      - C y T requieren ambos CONTACTO y referencia válida.
+        PWM máximo por mordaza: 25 % (heldMaxPwm en config_eje.h).
+        Plazo total de traslado y estabilización: 10 s (heldTimeoutMs
+        en config_geometria.h). Al vencer se detienen las salidas y se
+        informa TRASLADO INCOMPLETO. Q repite el resumen con posiciones,
+        PWM, encoders, contactos y separación. H permite referenciar de nuevo.
+        Si un eje se adelanta más de 1,0 mm, se pausa para dejar que
+        el otro lo alcance (heldSyncPauseMm en config_geometria.h).
+        Reanuda al volver a 0,5 mm de desfase. Al finalizar se comprueban
+        ambas posiciones objetivo y el cambio de separación.
+      - Código: src/main.cpp → startTransfer(),
+        superviseHeldTransfer(), coordinate().
+
+CONTACTOR Y CONSULTA
+  09. ON / OFF
+      - Función: Enciende el contactor sin temporizador / lo apaga.
+      - H/L, S/X y los fallos generales también lo apagan.
+      - Código: src/panel.cpp → Panel::on(), off(), update().
+  10. Q
+      - Función: Estado de motores, separación, panel y finales M3.
+  11. E
+      - Función: Diagnóstico ampliado de pines, encoder y fallos.
+      - Código: Q/E: src/main.cpp → serviceReport().
+  12. ?
+      - Función: Lista de comandos. También aparece al completar H.
+      - Código: src/main.cpp → serviceHelp().
+
+COMPROBAR SENTIDO Y FINALES DE M3
+  - Configuración: include/config_eje.h → motor3Config().
+  1. Con M3 parado, acciona cada final por separado y pide Q. El final
+     físico de retorno debe mostrar HOME=1 (GPIO15). El del otro extremo
+     debe mostrar END=1 (GPIO7). Ambos son activos en LOW.
+  2. Si se muestran cruzados, revisa el cableado o intercambia homePin
+     y endPin. Si se muestran activos en reposo, revisa el cableado y la
+     polaridad antes de modificar el sentido del motor.
+  3. Con los pines identificados y M3 lejos de los topes, prueba H3.
+     Si se aleja del HOME físico, envía S y revisa positiveDirLevel (HIGH en SEP-r22). E3 debe ir físicamente hacia el otro extremo.
+  4. Mientras E3 mueve en +1, x_local debe aumentar. Con H3, debe
+     disminuir hasta el reinicio a cero. Si el movimiento físico es
+     correcto pero la lectura va al revés, invierte encoderSign.
+  5. homePwm y endSeekPwm ajustan el PWM fijo. maxPwm sigue siendo el
+     techo de 80 %. homeTimeoutMs limita H3 a 30 s; moveTimeoutMs
+     limita E3 y el PID relativo a 120 s. Q muestra ref=1 tras H3.
+
+======================================================================
+2. FALLOS
+======================================================================
+
+M3 | src/motor3.cpp
+- Durante una orden, fail() corta el PWM de M3. Si begin() falla, setup()
+  también declara fallo general.
+
+  01. configuracion invalida
+      - Dónde: begin()
+      - Cuándo: Los parámetros de M3 son inválidos, incluido PWM, escala o tiempos.
+  02. no se pudo configurar PWM
+      - Dónde: begin()
+      - Cuándo: Falla la inicialización de la salida.
+  03. HOME y END simultaneos
+      - Dónde: begin(), move(), seekLimit(), update()
+      - Cuándo: Los dos finales de M3 se leen activos.
+  04. demora del bucle excedida
+      - Dónde: update()
+      - Cuándo: El bucle de M3 no se atendió dentro de 100 ms.
+  05. recorrido por orden excedido
+      - Dónde: update()
+      - Cuándo: El desplazamiento rebasa 5000 mm más 2 mm de margen.
+  06. tiempo maximo excedido
+      - Dónde: update()
+      - Cuándo: Se agota el tiempo de H3 (30 s), E3 o PID relativo (120 s).
+  07. final M3 no se estabiliza
+      - Dónde: update()
+      - Cuándo: Tras parar en H3/E3, el final no se confirma antes de 2 s.
+  08. encoder avanza contrario al sentido solicitado
+      - Dónde: update()
+      - Cuándo: El desplazamiento neto se aleja más de 2 mm en sentido contrario.
+  09. sin cambio de cuentas con PWM activo
+      - Dónde: update()
+      - Cuándo: Pasa 1 s con PWM aplicado sin cambios en el encoder.
+  10. periodo PID excedido
+      - Dónde: update()
+      - Cuándo: Se supera el intervalo máximo entre cálculos de PID (100 ms).
+  11. salida PID no finita
+      - Dónde: update()
+      - Cuándo: El resultado del PID es NaN o infinito.
+
+M1/M2 | src/eje.cpp
+- Axis::fail() corta el PWM del eje afectado, guarda el diagnóstico e
+  invalida su referencia. El coordinador propaga el fallo al proceso.
+
+  12. Configuracion invalida
+      - Dónde: Axis::begin()
+      - Cuándo: validConfig() rechaza la configuración del eje.
+  13. Fallo al configurar PWM
+      - Dónde: Axis::begin()
+      - Cuándo: Falla la inicialización de la salida.
+  14. HOME y END activos a la vez
+      - Dónde: begin(), home(), moveTo(), update()
+      - Cuándo: Se leen activos ambos finales del mismo eje.
+  15. Timeout: HOME no se estabiliza; revisar conexion
+      - Dónde: update()
+      - Cuándo: HOME no se confirma dentro de su ventana.
+  16. Recorrido HOME excedido
+      - Dónde: update()
+      - Cuándo: Al buscar HOME se rebasa el recorrido configurado más el margen.
+  17. Timeout HOME
+      - Dónde: update()
+      - Cuándo: Se agota el tiempo de búsqueda de HOME (15 s).
+  18. Timeout movimiento
+      - Dónde: update()
+      - Cuándo: Se agota el tiempo de posicionamiento (120 s).
+  19. Pausa sin avance en cierre excedida: compresion/bloqueo
+      - Dónde: update()
+      - Cuándo: Pasan 5 s con PWM de cierre y sin cambios del encoder.
+  20. Apertura sin cambio de cuentas con PWM activo
+      - Dónde: update()
+      - Cuándo: Pasa 1 s con PWM de apertura y sin cambios del encoder.
+  21. Posicion fuera de recorrido configurado
+      - Dónde: update()
+      - Cuándo: La posición queda fuera del recorrido más el margen.
+  22. Periodo de control excedido
+      - Dónde: update()
+      - Cuándo: Se supera el intervalo máximo entre cálculos de PID.
+  23. Salida PID no finita
+      - Dónde: update()
+      - Cuándo: El resultado del PID es NaN o infinito.
+
+FALLOS GENERALES | src/main.cpp
+- fault() detiene los tres motores, apaga el contactor y guarda el
+  diagnóstico de las mordazas. coordinate() y superviseHeldTransfer()
+  también propagan el motivo que reporta un Axis.
+
+  24. Pines/geometria invalidos
+      - Dónde: setup()
+      - Cuándo: Conflicto de pines o canales, o geometría inválida.
+  25. Inicializacion fallida; revisar configuracion
+      - Dónde: setup()
+      - Cuándo: Un motor no pudo inicializarse.
+  26. CONTACTO al encender: HOME automatico bloqueado
+      - Dónde: startHome()
+      - Cuándo: Se detecta contacto al intentar el HOME automático de M1/M2.
+  27. HOME y END simultaneos
+      - Dónde: startHome()
+      - Cuándo: Ambos finales de una mordaza activos al solicitar HOME.
+  28. No se pudo iniciar HOME
+      - Dónde: startHome()
+      - Cuándo: Un eje rechaza iniciar la referenciación.
+  29. No se pudo iniciar posicion
+      - Dónde: startSeparation()
+      - Cuándo: Un eje rechaza iniciar el posicionamiento D.
+  30. No se pudo preparar traslado sujeto
+      - Dónde: startTransfer()
+      - Cuándo: Un eje no acepta la preparación del traslado con pieza sujeta.
+  31. Referencia HOME perdida en sujecion
+      - Dónde: superviseHeldTransfer()
+      - Cuándo: Una mordaza deja de tener referencia válida.
+  33. CONTACTO perdido durante sujecion/traslado
+      - Dónde: superviseHeldTransfer()
+      - Cuándo: Se confirma pérdida de contacto durante 30 ms.
+  34. CONTACTOS no se estabilizan
+      - Dónde: superviseHeldTransfer()
+      - Cuándo: Los contactos no se reconfirman dentro de 2 s tras una pausa.
+  35. Cambio excesivo de separacion con pieza sujeta
+      - Dónde: superviseHeldTransfer()
+      - Cuándo: La separación medida por los carros cambia más de 0,5 mm
+        en reposo o al terminar de estabilizar un traslado C/T.
+  36. CONTACTO confirmado perdido mientras el otro eje aproxima
+      - Dónde: coordinate()
+      - Cuándo: Una mordaza pierde el contacto confirmado mientras la otra avanza.
+  37. HOME impide alcanzar objetivo
+      - Dónde: coordinate()
+      - Cuándo: HOME bloquea el posicionamiento de una mordaza.
+  38. Sensor impide completar traslado sujeto
+      - Dónde: coordinate()
+      - Cuándo: Un sensor impide que una mordaza complete C o T.
+  39. Bucle de control excedido
+      - Dónde: loop()
+      - Cuándo: Se supera la demora máxima del bucle durante una operación M1/M2.
+
+PARADAS NORMALES Y RECHAZOS
+  - H3/E3 termina al confirmar el final solicitado. M3 relativo termina
+    al estabilizarse o cuando un final bloquea el sentido aplicado.
+  - D registra CONTACTO o END en cada eje.
+  - Un comando inválido, un destino fuera de rango o un eje ocupado
+    se rechaza sin iniciar la orden.
+  - Los pulsadores START, STOP y EMERGENCIA del panel generan avisos.
+  - El corte de emergencia corresponde al circuito externo.
