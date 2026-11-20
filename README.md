@@ -16,6 +16,6 @@ Prototipo que sujeta, centra y transporta un ladrillo frente a una sierra fija. 
 | [04_Programacion](04_Programacion/) | **Firmware final** y versiones de prueba |
 | [05_Control_y_Simulacion](05_Control_y_Simulacion/) | Modelos, control y simulaciones (MATLAB) |
 | [06_Pruebas_y_Resultados](06_Pruebas_y_Resultados/) | Protocolo y registro de pruebas |
-| [08_Presentacion](08_Presentacion/) | Presentación de la sustentación |
+| [07_Presentacion](07_Presentacion/) | Presentación de la sustentación |
 
 Firmware final: [`04_Programacion/ESP32_PlatformIO/Firmware_Cortadora`](04_Programacion/ESP32_PlatformIO/Firmware_Cortadora/)
