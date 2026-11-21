@@ -10,7 +10,7 @@ Prototipo que sujeta, centra y transporta un ladrillo frente a una sierra fija. 
 
 | Carpeta | Contenido |
 |---|---|
-| [01_Documentacion](01_Documentacion/) | Documento de tesis y referencias |
+| [01_Documentacion](01_Documentacion/) | Documento de tesis, referencias y cronograma |
 | [02_Diseno_Mecanico](02_Diseno_Mecanico/) | Planos (PDF y SolidWorks) y modelos CAD |
 | [03_Electronica](03_Electronica/) | PCB (Altium), Gerber y esquemático |
 | [04_Programacion](04_Programacion/) | **Firmware final** y versiones de prueba |
